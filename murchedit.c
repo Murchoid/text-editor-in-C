@@ -3,10 +3,13 @@
 #include <unistd.h>
 #include <ctype.h>
 #include <stdio.h>
+#include <string.h>
 #include <errno.h>
 #include <sys/ioctl.h>
 
 #define CTRL_KEY(k) ((k)& 0x1f)
+#define MURCH_VERSION  "0.0.1"
+
 
 struct editorConfig{
 	int screenrows;
@@ -16,6 +19,25 @@ struct editorConfig{
 
 struct editorConfig E;
 
+struct abuf{
+	char *b;
+	int len;
+};
+
+#define ABUF_INIT {NULL, 0}
+
+void abAppend(struct abuf *ab, const char *s, int len){
+	char *new = realloc(ab->b, ab->len+len);
+	
+	if(new ==NULL) return;
+	memcpy(&new[ab->len], s, len);
+	ab->b = new;
+	ab->len +=len;
+}
+
+void abFree(struct abuf *ab){
+	free(ab->b);
+}
 void die(const char *s){
 
 	write(STDOUT_FILENO, "\x1b[2J", 4);
@@ -55,12 +77,21 @@ char editorReadKey(){
 	return c;
 }
 
-void editorDrawRows(){
+void editorDrawRows(struct abuf *ab){
 	int y ;
 	for(y=0; y< E.screenrows; y++){
-		write(STDOUT_FILENO, "~",1);
+		if(y == E.screenrows/3){
+			char welcome[80];
+			int welcomelen = snprintf(welcome,sizeof(welcome), "Murchoid editor -- version %s", MURCH_VERSION);
+			if(welcomelen > E.screencols) welcomelen = E.screencols;
+			abAppend(ab, welcome, welcomelen);
+		}else{
+			abAppend(ab, "~", 1);
+		}
+
+		abAppend(ab, "\x1b[K", 3);
 		if(y < E.screenrows - 1){
-			write(STDOUT_FILENO, "\r\n", 2);
+			abAppend(ab, "\r\n", 2);
 		}
 	}
 }
@@ -112,12 +143,18 @@ void editorProcessKeyPressed(){
 }
 
 void editorRefreshScreen(){
-	write(STDOUT_FILENO, "\x1b[2J", 4);
-	write(STDOUT_FILENO, "\x1b[H", 3);
+	struct abuf ab = ABUF_INIT;
 	
-	editorDrawRows();
+	abAppend(&ab, "\x1b[?25l", 6);
+	abAppend(&ab, "\x1b[H", 3);
+	
+	editorDrawRows(&ab);
 
-	write(STDOUT_FILENO, "\x1b[H", 3);
+	abAppend(&ab, "\x1b[H", 3);
+	abAppend(&ab, "\x1b[25h", 6);
+	
+	write(STDOUT_FILENO, ab.b, ab.len);
+	abFree(&ab);
 }
 
 void initEditor(){
