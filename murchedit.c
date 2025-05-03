@@ -13,6 +13,7 @@
 #include <sys/ioctl.h>
 #include <sys/types.h>
 #include <time.h>
+#include <stdarg.h>
 
 #define CTRL_KEY(k) ((k)& 0x1f)
 #define MURCH_VERSION  "0.0.1"
@@ -242,6 +243,15 @@ void editorDrawStatusBar(struct abuf *ab){
 		len++;
 	}
 	abAppend(ab, "\x1b[m", 3);
+	abAppend(ab, "\r\n",2);
+}
+
+void editorDrawMessageBar(struct abuf *ab){
+	abAppend(ab,"\x1b[K",3);
+	int msglen = sizeof(E.statusmsg);
+	if(msglen > E.screencols) msglen = E.screencols;
+	if(msglen && time(NULL) - E.statusmsg_time < 5)
+		abAppend(ab,E.statusmsg, msglen);
 }
 
 int getCursorPosition(int *rows, int *cols){
@@ -435,6 +445,7 @@ void editorRefreshScreen(){
 	
 	editorDrawRows(&ab);
 	editorDrawStatusBar(&ab);
+	editorDrawMessageBar(&ab);
 
 	char buf[32];
 	snprintf(buf, sizeof(buf), "\x1b[%d;%dH", (E.cy-E.rowoff)+1, (E.rx-E.coloff)+1);
@@ -444,6 +455,16 @@ void editorRefreshScreen(){
 	
 	write(STDOUT_FILENO, ab.b, ab.len);
 	abFree(&ab);
+}
+
+void editorStatusMessage(const char *fmt, ...){
+	va_list ap;
+	va_start(ap, fmt);
+
+	vsnprintf(E.statusmsg, sizeof(E.statusmsg), fmt, ap);
+
+	va_end(ap);
+	E.statusmsg_time = time(NULL);
 }
 
 void initEditor(){
@@ -459,6 +480,7 @@ void initEditor(){
 	E.statusmsg_time=0;
 
 	if(getWindowSize(&E.screenrows, &E.screencols) == -1) die("getWindowSize");
+	E.screenrows-=2;
 }
 
 int main(int argc, char *argv[]) {
@@ -470,6 +492,7 @@ int main(int argc, char *argv[]) {
 		editorOpen(argv[1]);
 	}
 	
+	editorStatusMessage("HELP: CTRL Q = quit");
  	
   	while(1){
 		editorRefreshScreen();
